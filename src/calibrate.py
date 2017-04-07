@@ -7,6 +7,7 @@ import click
 import glob
 
 
+@click.command()
 @click.argument("image_folder_path")
 @click.option("--nx", default=9)
 @click.option("--ny", default=6)
@@ -38,8 +39,33 @@ def calibrate(image_folder_path, nx=9, ny=6, demo=False):
         cv2.waitKey()
 
 
-calibrate_cmd = click.command()(calibrate)
+UNDISTORT_INFO = None
+
+
+def _undistort(img):
+    global UNDISTORT_INFO
+    if UNDISTORT_INFO is None:
+        with open("calibrate.pickle", "rb") as f:
+            UNDISTORT_INFO = pickle.load(f)
+    mtx = UNDISTORT_INFO["mtx"]
+    dist = UNDISTORT_INFO["dist"]
+    return cv2.undistort(img, mtx, dist, dst=None, newCameraMatrix=mtx)
+
+
+@click.command()
+@click.argument("image_folder_path")
+def undistort(image_folder_path):
+    for img_name in glob.iglob(os.path.join(image_folder_path, "*.jpg")):
+        img = _undistort(cv2.imread(img_name))
+        cv2.imwrite("results/%s" % os.path.split(img_name)[-1], img)
 
 
 if __name__ == "__main__":
-    calibrate_cmd()
+    @click.group()
+    def cli():
+        pass
+
+    cli.add_command(calibrate)
+    cli.add_command(undistort)
+
+    cli()
