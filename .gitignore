@@ -79,7 +79,7 @@ tags
 # OSX
 .DS_Store
 ._.DS_Store
-
+output_images
 
 mac_sim.app
 data

@@ -57,7 +57,7 @@ def _undistort(img):
 def undistort(image_folder_path):
     for img_name in glob.iglob(os.path.join(image_folder_path, "*.jpg")):
         img = _undistort(cv2.imread(img_name))
-        cv2.imwrite("results/%s" % os.path.split(img_name)[-1], img)
+        cv2.imwrite("output_images/%s" % os.path.split(img_name)[-1], img)
 
 
 if __name__ == "__main__":
