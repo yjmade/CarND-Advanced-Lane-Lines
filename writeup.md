@@ -56,7 +56,7 @@ To demonstrate this step, I will describe how I apply the distortion correction 
 ![alt text](./output_images/test1-1-undistort.jpg)
 
 ####2. Describe how (and identify where in your code) you used color transforms, gradients or other methods to create a thresholded binary image.  Provide an example of a binary image result.
-I used a combination of gradient x thresholds and HLS s channel threshhold to generate a binary image (thresholding steps at lines 54 through 106 in `./src/line_detect.py`).  Here's an example of my output for this step. 
+I used a combination of gradient x thresholds, gradient direction threshold and HLS S channel threshhold to generate a binary image (thresholding steps at lines 54 through 106 in `./src/line_detect.py`).  The threshold of gradient x is from 20 to 100, the direction of gradient is between 0.7 to 1.3, and S channel value from 150 to 255.   Here's an example of my output for this step. 
 
 ![alt text](./output_images/test1-7-binary_thresh_with_hls_thresh.jpg)
 
@@ -122,5 +122,10 @@ Here's a [link to my video result](./output_images/project_video.mp4)
 
 ####1. Briefly discuss any problems / issues you faced in your implementation of this project.  Where will your pipeline likely fail?  What could you do to make it more robust?
 
-Here I'll talk about the approach I took, what techniques I used, what worked and why, where the pipeline might fail and how I might improve it if I were going to pursue this project further.  
+Here I'll talk about the approach I took, what techniques I used, what worked and why, where the pipeline might fail and how I might improve it if I were going to pursue this project further. 
+
+* the pipeline has assumed that the car is lay in middle of the lane and two lane lines on each side, but in the real world, this assumption is not nessicarily true.
+* in the challenge video, it's failed at recognize the left lane, which get a dark shadow close to it, and it will enter the area of perspective transform, and  disturb the line poly fit, so we can see the detected left line jump between the edge of shadow and the lane. At the end of challenge video, the shadow get far away from the lane line, now we can get the correct detection.
+* Also in the challenge video, there are some patch lines paralles to the lane line and get quit close, will make it fail
+* In the harder challenge video, the most serious reason to be failed is the turning is too sharp, and there are some bright area of the side of the rode introduced by the S channel, so the sliding window may miss tracking of the line, then make wrong prediction. Another problem is in my code, I take the bottom half of the perspective transformed image to make the histgram and to get the base of the two line, but in this video, too sharp turning will make the two line get overlapping in the histgram and bring error for the locate of base of line.
 
