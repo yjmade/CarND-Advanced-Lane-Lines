@@ -246,14 +246,21 @@ class LineDetect(object):
 
         return ploty, left_fitx, right_fitx
 
-    def compute_curvature(self, y, x):
-        ym_per_pix = 30 / 720  # meters per pixel in y dimension
-        xm_per_pix = 3.7 / 700  # meters per pixel in x dimension
-        a, b, c = np.polyfit(y * ym_per_pix, x * xm_per_pix, 2)
+    ym_per_pix = 30 / 720  # meters per pixel in y dimension
+    xm_per_pix = 3.7 / 700  # meters per pixel in x dimension
 
-        return (1 + (2 * a * self.height + b)**2)**1.5 / abs(2 * a)
+    def compute_curvature_and_root_point(self, y, x):
+        a, b, c = np.polyfit(y * self.ym_per_pix, x * self.xm_per_pix, 2)
+        y_eval = np.max(y) * self.ym_per_pix
+        root_point = a * y_eval * y_eval + b * y_eval + c
+        return (1 + (2 * a * y_eval + b)**2)**1.5 / abs(2 * a), root_point
 
-    def final_draw(self, undist_img, ploty, left_fitx, right_fitx, curvature):
+    def compute_offset(self, root1, root2):
+        middle_of_lane = (root1 + root2) / 2
+        car_position = self.width / 2 * self.xm_per_pix
+        return abs(car_position - middle_of_lane)
+
+    def final_draw(self, undist_img, ploty, left_fitx, right_fitx, curvature, offset):
         # Create an image to draw the lines on
         warp_zero = np.zeros([self.height, self.width]).astype(np.uint8)
         color_warp = np.dstack((warp_zero, warp_zero, warp_zero))
@@ -270,7 +277,7 @@ class LineDetect(object):
         newwarp = self.inv_perspective_transform(color_warp)
         # Combine the result with the original image
         result = cv2.addWeighted(undist_img, 1, newwarp, 0.3, 0)
-        cv2.putText(result, "Curvature: %.2f" % curvature, (50, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
+        cv2.putText(result, "Curvature: %.2fm Offset: %.2fm" % (curvature, offset), (50, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
         self.imwrite(result, "result")
         return result
 
@@ -303,15 +310,17 @@ class LineDetect(object):
             warped_mask,
             plot=self.debug
         )
-        left_curvature = self.compute_curvature(ploty, left_fitx)
-        right_curvature = self.compute_curvature(ploty, right_fitx)
+        left_curvature, left_root = self.compute_curvature_and_root_point(ploty, left_fitx)
+        right_curvature, right_root = self.compute_curvature_and_root_point(ploty, right_fitx)
         mean_curvature = (left_curvature + right_curvature) / 2
+        offset = self.compute_offset(left_root, right_root)
         if self.debug:
             print(self.fname)
             print("left curvature", left_curvature)
             print("right curvature", right_curvature)
             print("mean curvature", mean_curvature)
-        return self.final_draw(img, ploty, left_fitx, right_fitx, mean_curvature)
+            print("offset", offset)
+        return self.final_draw(img, ploty, left_fitx, right_fitx, mean_curvature, offset)
 
 
 @click.command()

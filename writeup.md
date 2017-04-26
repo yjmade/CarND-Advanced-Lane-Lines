@@ -58,7 +58,7 @@ To demonstrate this step, I will describe how I apply the distortion correction 
 ####2. Describe how (and identify where in your code) you used color transforms, gradients or other methods to create a thresholded binary image.  Provide an example of a binary image result.
 I used a combination of gradient x thresholds, gradient direction threshold and HLS S channel threshhold to generate a binary image (thresholding steps at lines 54 through 106 in `./src/line_detect.py`).  The threshold of gradient x is from 20 to 100, the direction of gradient is between 0.7 to 1.3, and S channel value from 150 to 255.   Here's an example of my output for this step. 
 
-![alt text](./output_images/test1-7-binary_thresh_with_hls_thresh.jpg)
+![alt text](./output_images/test1-5-binary_thresh_with_hls_thresh.jpg)
 
 ####3. Describe how (and identify where in your code) you performed a perspective transform and provide an example of a transformed image.
 
@@ -90,23 +90,25 @@ This resulted in the following source and destination points:
 
 I verified that my perspective transform was working as expected by drawing the `src` and `dst` points onto a test image and its warped counterpart to verify that the lines appear parallel in the warped image.
 
-![alt text](./output_images/test1-8-perspective_transformed.jpg)
+![alt text](./output_images/test1-6-perspective_transformed.jpg)
 
 ####4. Describe how (and identify where in your code) you identified lane-line pixels and fit their positions with a polynomial?
 
 The code for my polynomial fitting includes two function called `extract_lanes_pixels()` and `poly_fit()`, which appears in lines 150 through 247 in the file `./src/line_detect.py`. `extract_lanes_pixels()` extracting the point in left and right lane with slide window histogram method,  then `poly_fit()` take these point and fit my lane lines with a 2nd order polynomial kinda like this:
 
-![alt text](./output_images/test1-9-poly_fit.jpg)
+![alt text](./output_images/test1-7-poly_fit.jpg)
 
 ####5. Describe how (and identify where in your code) you calculated the radius of curvature of the lane and the position of the vehicle with respect to center.
 
-I did this in lines 249 through 254 in my code in `./src/line_detect.py`, by caculating the curvature radias next to the car which y locate at the botom of the image, and also I magnifyed the point `poly_fit()` generated to the scale in meter by times a ratio between meter and pixels.
+To calcaulate the radius, I did this in lines 252 through 256 in my code with `compute_curvature_and_root_point()` method, in `./src/line_detect.py`, by caculating the curvature radias next to the car which y locate at the botom of the image, and also I magnifyed the point `poly_fit()` generated to the scale in meter by times a ratio between meter and pixels.
+
+And to calculate the offset, I assume the camera is located at the middle of the car. So I get the coordinate in meter of both lane line in the bottom which closest to the car, then calculate the absolute offset of the middle of this two point to the middle of the image. The code is located at `compute_offset()` method from line 258 to 261 in `src/line_detect.py`
 
 ####6. Provide an example image of your result plotted back down onto the road such that the lane area is identified clearly.
 
 I implemented this step in lines 256 through 275 in my code in `./src/line_detect.py` in the function `final_draw()`.  Here is an example of my result on a test image:
 
-![alt text](./output_images/test1-10-result.jpg)
+![alt text](./output_images/test1-8-result.jpg)
 
 ---
 
