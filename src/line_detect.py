@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 import os
 import sys
+import math
 sys.path.insert(0, os.path.dirname(__file__))
 import numpy as np
 import cv2
@@ -22,34 +23,112 @@ class LineDetect(object):
         return name
 
     def imwrite(self, img, name):
-        if not self.debug:
-            return
-        cv2.imwrite(self._get_imwrite_name(name), img)
+        if self.concat_draw is not None:
+            # img = cv2.putText(img, name, (50, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
+            self.names.append(name)
+            self.concat_draw.append(img)
+        if self.debug:
+            if len(img.shape) == 3:
+                img = cv2.cvtColor(img, cv2.COLOR_RGB2BGR)
+            cv2.imwrite(self._get_imwrite_name(name), img)
+
+    # def fig_write(self, fig, name):
+    #     from io import BytesIO
+    #     io = BytesIO()
+    #     fig.savefig(io, dpi=300, bbox_inches='tight', pad_inches=0)
+    #     io.seek(0)
+    #     img = cv2.cvtColor(
+    #         cv2.imdecode(np.fromstring(io.read(), np.uint8), cv2.IMREAD_COLOR),
+    #         cv2.COLOR_BGR2RGB
+    #     )
+    #     self.imwrite(img, name)
+
+    def fig_write(self, fig, name):
+        from matplotlib.backends.backend_agg import FigureCanvasAgg as FigureCanvas
+        canvas = FigureCanvas(fig)
+        canvas.draw()
+        res_str, shape = canvas.print_to_buffer()
+        img = np.fromstring(res_str, dtype='uint8').reshape([shape[1], shape[0], 4])
+        img = cv2.cvtColor(img, cv2.COLOR_RGBA2RGB)
+        # import ipdb; ipdb.set_trace()
+        self.imwrite(img, name)
+
+    def normalize_img_to_3_channel(self, img):
+        if len(img.shape) == 2:
+            img = np.stack([img] * 3, 2)
+
+        return img
+
+    def summarize_concat_draw(self, img_per_row=4):
+        concat_draw = [
+            self.normalize_img_to_3_channel(img)
+            for img in self.concat_draw
+        ]
+        main_res = concat_draw.pop()
+        concat_draw = [
+            cv2.putText(img, name, (50, 50), cv2.FONT_HERSHEY_SIMPLEX, 2, (255, 255, 255), 4)
+            for img, name in zip(concat_draw, self.names)
+        ]
+        row = math.ceil(len(concat_draw) / img_per_row)
+        sub_height = self.height // img_per_row
+        sub_width = self.width // img_per_row
+
+        row_offset = sub_height * row
+        vis = np.zeros([row_offset + self.height, self.width, 3], dtype=np.uint8)
+        vis[row_offset:self.height + row_offset, :, :] = main_res
+        for i in range(row):
+            for j in range(img_per_row):
+                try:
+                    img = concat_draw.pop(0)
+                except IndexError:
+                    break
+                height_start = i * sub_height
+                height_stop = height_start + sub_height
+                width_start = j * sub_width
+                width_stop = width_start + sub_width
+                vis[height_start:height_stop, width_start:width_stop, :] = cv2.resize(img, (sub_width, sub_height))
+
+        return vis
 
     def imwrite_mask(self, mask, name):
-        if not self.debug:
-            return
         self.imwrite(mask * 255, name)
 
-    def __init__(self, img_or_fname, debug=None, fname=None):
+    def __init__(self, is_video=False, debug=True, concat_draw=False, fpath=None):
+        self.debug = debug
+        self.concat_draw = True if concat_draw else None
+        self.is_video = is_video
+        self.seq = 0
+        self.fpath = fpath
+
+    def init_main(self, img_or_fname):
+        self.seq += 1
+        if self.concat_draw:
+            self.concat_draw = []
+            self.names = []
         if isinstance(img_or_fname, str):
             img = cv2.imread(img_or_fname)
-            debug = True if debug is None else debug
+            img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
             fname = os.path.split(img_or_fname)[-1]
             fname = "{}-%d-%s{}".format(*os.path.splitext(fname))
 
         elif isinstance(img_or_fname, np.ndarray):
             img = img_or_fname
-            debug = False if debug is None else debug
+            fname = self.fpath
+            if self.is_video:
+                assert fname
+                sp = fname.split("/")
+                sp[-1] = "{}-{}-%d-%s.png".format(self.seq, os.path.splitext(sp[-1])[0])
+                fname = "/".join(sp)
         else:
             raise ValueError("input is neither a filename or a img array")
 
-        if debug:
+        if self.debug:
             assert fname
-        self.img = img
         self.fname = fname
-        self.debug = debug
-        self.height, self.width = self.img.shape[:2]
+        self.height, self.width = img.shape[:2]
+        self.imwrite_index = 0
+
+        return img
 
     def binary_thresh(
         self,
@@ -106,7 +185,7 @@ class LineDetect(object):
         return result
 
     def hls_thresh(self, img, thresh):  # (170, 255) or (90, 255)
-        hls_img = cv2.cvtColor(img, cv2.COLOR_BGR2HLS)
+        hls_img = cv2.cvtColor(img, cv2.COLOR_RGB2HLS)
         s_channel = hls_img[:, :, 2]
         self.imwrite(s_channel, "s_channel")
         binary_output = np.zeros_like(s_channel)
@@ -115,18 +194,17 @@ class LineDetect(object):
 
     @property
     def perspective_transform_src_dst(self):
-        img_height, img_width = self.img.shape[:2]
         return (
             np.array([
                 [565, 470],
-                [210, img_height],
-                [1120, img_height],
+                [210, self.height],
+                [1120, self.height],
                 [715, 465]
             ], dtype=np.float32),
             np.array([
                 [210, 200],
-                [210, img_height],
-                [1120, img_height],
+                [210, self.height],
+                [1120, self.height],
                 [1120, 200]
             ], dtype=np.float32),
         )
@@ -238,11 +316,15 @@ class LineDetect(object):
 
             fig = plt.figure()
             plt.imshow(out_img)
+            plt.axis('off')
             plt.plot(left_fitx, ploty, color='yellow')
             plt.plot(right_fitx, ploty, color='yellow')
-            plt.xlim(0, self.img.shape[1])
-            plt.ylim(self.img.shape[0], 0)
-            fig.savefig(self._get_imwrite_name("poly_fit"), dpi=300, bbox_inches='tight')
+            plt.xlim(0, self.width)
+            plt.ylim(self.height, 0)
+            fig.axes[0].get_yaxis().set_visible(False)
+            fig.axes[0].get_xaxis().set_visible(False)
+            # import ipdb; ipdb.set_trace()
+            self.fig_write(fig, "poly_fit")
 
         return ploty, left_fitx, right_fitx
 
@@ -258,7 +340,7 @@ class LineDetect(object):
     def compute_offset(self, root1, root2):
         middle_of_lane = (root1 + root2) / 2
         car_position = self.width / 2 * self.xm_per_pix
-        return abs(car_position - middle_of_lane)
+        return (car_position - middle_of_lane)
 
     def final_draw(self, undist_img, ploty, left_fitx, right_fitx, curvature, offset):
         # Create an image to draw the lines on
@@ -279,11 +361,14 @@ class LineDetect(object):
         result = cv2.addWeighted(undist_img, 1, newwarp, 0.3, 0)
         cv2.putText(result, "Curvature: %.2fm Offset: %.2fm" % (curvature, offset), (50, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
         self.imwrite(result, "result")
+        if self.concat_draw is not None:
+            result = self.summarize_concat_draw()
+            self.imwrite(result, "sumresult")
+
         return result
 
-    def main(self):
-        self.imwrite_index = 0
-        img = self.img
+    def main(self, img):
+        img = self.init_main(img)
         self.imwrite(img, "orig")
 
         img = undistort(img)
@@ -308,7 +393,7 @@ class LineDetect(object):
         ploty, left_fitx, right_fitx = self.poly_fit(
             *self.extract_lanes_pixels(warped_mask),
             warped_mask,
-            plot=self.debug
+            plot=self.debug or self.concat_draw is not None
         )
         left_curvature, left_root = self.compute_curvature_and_root_point(ploty, left_fitx)
         right_curvature, right_root = self.compute_curvature_and_root_point(ploty, right_fitx)
@@ -326,8 +411,16 @@ class LineDetect(object):
 @click.command()
 @click.argument("input_video_path", type=click.Path(exists=True))
 @click.argument("output_path")
-def main(input_video_path, output_path):
-    clip = VideoFileClip(input_video_path).fl_image(lambda img: LineDetect(img).main())
+@click.option("--video_debug", is_flag=True)
+@click.option("--debug", is_flag=True)
+@click.option("--subclip")
+def main(input_video_path, output_path, video_debug, debug, subclip=None):
+    detector = LineDetect(debug=debug, concat_draw=video_debug, is_video=True, fpath=output_path)
+    clip = VideoFileClip(input_video_path)
+    if subclip:
+        subclip = eval("(%s)" % subclip)
+        clip = clip.subclip(*subclip)
+    clip = clip.fl_image(lambda img: detector.main(img))
     clip.write_videofile(output_path, audio=False, threads=8)
 
 if __name__ == "__main__":
