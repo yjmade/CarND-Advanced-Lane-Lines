@@ -9,8 +9,24 @@ import matplotlib.pyplot as plt
 from calibrate import _undistort as undistort
 import click
 from moviepy.editor import VideoFileClip
+from line import Line, LineType
 
 clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
+
+
+class FrameQueue(object):
+
+    def __init__(self, size):
+        self.size = size
+        self.queue = []
+
+    def enqueue(self, item):
+        self.queue.append(item)
+        if len(self.queue) > self.size:
+            self.queue.pop(0)
+
+    def sum(self):
+        return np.concatenate(self.queue, 0)
 
 
 class LineDetect(object):
@@ -93,12 +109,21 @@ class LineDetect(object):
     def imwrite_mask(self, mask, name):
         self.imwrite(mask * 255, name)
 
+    queue_size = 10
+
     def __init__(self, is_video=False, debug=True, concat_draw=False, fpath=None):
         self.debug = debug
         self.concat_draw = True if concat_draw else None
         self.is_video = is_video
         self.seq = 0
         self.fpath = fpath
+        self.left_line = Line(LineType.LeftLine)
+        self.right_line = Line(LineType.RightLine)
+        if is_video:
+            self.left_x_queue = FrameQueue(self.queue_size)
+            self.left_y_queue = FrameQueue(self.queue_size)
+            self.right_x_queue = FrameQueue(self.queue_size)
+            self.right_y_queue = FrameQueue(self.queue_size)
 
     def init_main(self, img_or_fname):
         self.seq += 1
@@ -342,14 +367,14 @@ class LineDetect(object):
         car_position = self.width / 2 * self.xm_per_pix
         return (car_position - middle_of_lane)
 
-    def final_draw(self, undist_img, ploty, left_fitx, right_fitx, curvature, offset):
+    def final_draw(self, undist_img, left_line, right_line, curvature, offset):
         # Create an image to draw the lines on
         warp_zero = np.zeros([self.height, self.width]).astype(np.uint8)
         color_warp = np.dstack((warp_zero, warp_zero, warp_zero))
 
         # Recast the x and y points into usable format for cv2.fillPoly()
-        pts_left = np.array([np.transpose(np.vstack([left_fitx, ploty]))])
-        pts_right = np.array([np.flipud(np.transpose(np.vstack([right_fitx, ploty])))])
+        pts_left = np.array([np.transpose(np.vstack(left_line.fit_xy()))])
+        pts_right = np.array([np.flipud(np.transpose(np.vstack(right_line.fit_xy())))])
         pts = np.hstack((pts_left, pts_right))
 
         # Draw the lane onto the warped blank image
@@ -389,23 +414,35 @@ class LineDetect(object):
 
         warped_mask = self.perspective_transform(mask)
         self.imwrite_mask(warped_mask, "perspective_transformed")
+        # leftx, lefty, rightx, righty, left_lane_inds, right_lane_inds = self.extract_lanes_pixels(warped_mask)
+        # if self.is_video:
+        #     self.left_x_queue.enqueue(leftx)
+        #     leftx = self.left_x_queue.sum()
+        #     self.left_y_queue.enqueue(lefty)
+        #     lefty = self.left_y_queue.sum()
+        #     self.right_x_queue.enqueue(rightx)
+        #     rightx = self.right_x_queue.sum()
+        #     self.right_y_queue.enqueue(righty)
+        #     righty = self.right_y_queue.sum()
+        # ploty, left_fitx, right_fitx = self.poly_fit(
+        #     leftx, lefty, rightx, righty, left_lane_inds, right_lane_inds,
+        #     warped_mask,
+        #     plot=self.debug or self.concat_draw is not None
+        # )
+        # left_curvature, left_root = self.compute_curvature_and_root_point(ploty, left_fitx)
+        # right_curvature, right_root = self.compute_curvature_and_root_point(ploty, right_fitx)
+        # mean_curvature = (left_curvature + right_curvature) / 2
+        # offset = self.compute_offset(left_root, right_root)
 
-        ploty, left_fitx, right_fitx = self.poly_fit(
-            *self.extract_lanes_pixels(warped_mask),
-            warped_mask,
-            plot=self.debug or self.concat_draw is not None
-        )
-        left_curvature, left_root = self.compute_curvature_and_root_point(ploty, left_fitx)
-        right_curvature, right_root = self.compute_curvature_and_root_point(ploty, right_fitx)
-        mean_curvature = (left_curvature + right_curvature) / 2
-        offset = self.compute_offset(left_root, right_root)
-        if self.debug:
-            print(self.fname)
-            print("left curvature", left_curvature)
-            print("right curvature", right_curvature)
-            print("mean curvature", mean_curvature)
-            print("offset", offset)
-        return self.final_draw(img, ploty, left_fitx, right_fitx, mean_curvature, offset)
+        self.left_line.update_line(warped_mask,{})
+        self.right_line.update_line(warped_mask,{})
+        # if self.debug:
+        #     print(self.fname)
+        #     print("left curvature", left_curvature)
+        #     print("right curvature", right_curvature)
+        #     print("mean curvature", mean_curvature)
+        #     print("offset", offset)
+        return self.final_draw(img, self.left_line, self.right_line, 0, 0)
 
 
 @click.command()
