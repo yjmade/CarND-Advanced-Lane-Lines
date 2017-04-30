@@ -13,6 +13,21 @@ from moviepy.editor import VideoFileClip
 clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
 
 
+class FrameQueue(object):
+
+    def __init__(self, size):
+        self.size = size
+        self.queue = []
+
+    def enqueue(self, item):
+        self.queue.append(item)
+        if len(self.queue) > self.size:
+            self.queue.pop(0)
+
+    def sum(self):
+        return np.concatenate(self.queue, 0)
+
+
 class LineDetect(object):
 
     result_dir = "./output_images"
@@ -93,12 +108,19 @@ class LineDetect(object):
     def imwrite_mask(self, mask, name):
         self.imwrite(mask * 255, name)
 
+    queue_size = 10
+
     def __init__(self, is_video=False, debug=True, concat_draw=False, fpath=None):
         self.debug = debug
         self.concat_draw = True if concat_draw else None
         self.is_video = is_video
         self.seq = 0
         self.fpath = fpath
+        if is_video:
+            self.left_x_queue = FrameQueue(self.queue_size)
+            self.left_y_queue = FrameQueue(self.queue_size)
+            self.right_x_queue = FrameQueue(self.queue_size)
+            self.right_y_queue = FrameQueue(self.queue_size)
 
     def init_main(self, img_or_fname):
         self.seq += 1
@@ -389,9 +411,18 @@ class LineDetect(object):
 
         warped_mask = self.perspective_transform(mask)
         self.imwrite_mask(warped_mask, "perspective_transformed")
-
+        leftx, lefty, rightx, righty, left_lane_inds, right_lane_inds = self.extract_lanes_pixels(warped_mask)
+        if self.is_video:
+            self.left_x_queue.enqueue(leftx)
+            leftx = self.left_x_queue.sum()
+            self.left_y_queue.enqueue(lefty)
+            lefty = self.left_y_queue.sum()
+            self.right_x_queue.enqueue(rightx)
+            rightx = self.right_x_queue.sum()
+            self.right_y_queue.enqueue(righty)
+            righty = self.right_y_queue.sum()
         ploty, left_fitx, right_fitx = self.poly_fit(
-            *self.extract_lanes_pixels(warped_mask),
+            leftx, lefty, rightx, righty, left_lane_inds, right_lane_inds,
             warped_mask,
             plot=self.debug or self.concat_draw is not None
         )
