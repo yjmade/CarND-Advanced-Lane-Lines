@@ -98,7 +98,8 @@ The code for my polynomial fitting includes two function called `slide_window_po
 
 ![alt text](./output_images/test1-7-poly_fit.jpg)
 
-But when in video, because for most frames, I can take the poly fit information, so I take the following approch to smoth the detect line between frames also to compensate the noise(shadow, dirt) occur in few frames.
+But when in video, because for most frames, I can take the poly fit information from previous frame, so I take the following approch to smooth the detect line between frames also to compensate the noise(shadow, dirt) occur in few frames.
+
 * For first frame, take slide window to search the line
 * Next frame, only search in a margin around the previous line position
 * Cuculate the diff of fit from last frame to this frame, if is too much, take a count, and keep the cached previous line position, otherwise, replace previous line position with new position. The diff is calculated by the average change of each parameter of polyfit.
