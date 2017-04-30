@@ -93,8 +93,6 @@ class LineDetect(LineFit):
     def imwrite_mask(self, mask, name):
         self.imwrite(mask * 255, name)
 
-    queue_size = 10
-
     def __init__(self, is_video=False, debug=True, concat_draw=False, fpath=None):
         self.debug = debug
         self.concat_draw = True if concat_draw else None

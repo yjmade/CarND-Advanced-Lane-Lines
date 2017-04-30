@@ -20,15 +20,18 @@ class FrameQueue(object):
 
 
 class LineFit(object):
+    queue_size = 5
 
     def __init__(self, is_video):
+        self.prev_fit = None, None
+        self.prev_fitx = None, None
         if is_video:
             self.left_x_queue = FrameQueue(self.queue_size)
             self.left_y_queue = FrameQueue(self.queue_size)
             self.right_x_queue = FrameQueue(self.queue_size)
             self.right_y_queue = FrameQueue(self.queue_size)
 
-    def extract_lanes_pixels(self, binary_warped):
+    def slide_window_point_extract(self, binary_warped):
 
         # Take a histogram of the bottom half of the image
         histogram = np.sum(binary_warped[binary_warped.shape[0] // 2:, :], axis=0)
@@ -97,6 +100,31 @@ class LineFit(object):
 
         return leftx, lefty, rightx, righty, left_lane_inds, right_lane_inds
 
+    def prev_fit_point_extract(self, binary_warped, left_fit, right_fit):
+        # Assume you now have a new warped binary image
+        # from the next frame of video (also called "binary_warped")
+        # It's now much easier to find line pixels!
+        nonzero = binary_warped.nonzero()
+        nonzeroy = np.array(nonzero[0])
+        nonzerox = np.array(nonzero[1])
+        margin = 100
+        left_lane_inds = ((nonzerox > (left_fit[0] * (nonzeroy**2) + left_fit[1] * nonzeroy + left_fit[2] - margin)) & (nonzerox < (left_fit[0] * (nonzeroy**2) + left_fit[1] * nonzeroy + left_fit[2] + margin)))
+        right_lane_inds = ((nonzerox > (right_fit[0] * (nonzeroy**2) + right_fit[1] * nonzeroy + right_fit[2] - margin)) & (nonzerox < (right_fit[0] * (nonzeroy**2) + right_fit[1] * nonzeroy + right_fit[2] + margin)))
+
+        # Again, extract left and right line pixel positions
+        leftx = nonzerox[left_lane_inds]
+        lefty = nonzeroy[left_lane_inds]
+        rightx = nonzerox[right_lane_inds]
+        righty = nonzeroy[right_lane_inds]
+        # # Fit a second order polynomial to each
+        # left_fit = np.polyfit(lefty, leftx, 2)
+        # right_fit = np.polyfit(righty, rightx, 2)
+        # # Generate x and y values for plotting
+        # ploty = np.linspace(0, binary_warped.shape[0] - 1, binary_warped.shape[0])
+        # left_fitx = left_fit[0] * ploty**2 + left_fit[1] * ploty + left_fit[2]
+        # right_fitx = right_fit[0] * ploty**2 + right_fit[1] * ploty + right_fit[2]
+        return leftx, lefty, rightx, righty, left_lane_inds, right_lane_inds
+
     def poly_fit(self, leftx, lefty, rightx, righty, left_lane_inds, right_lane_inds, binary_warped, plot=False):
 
         # Fit a second order polynomial to each
@@ -128,8 +156,8 @@ class LineFit(object):
             fig.axes[0].get_xaxis().set_visible(False)
             # import ipdb; ipdb.set_trace()
             self.fig_write(fig, "poly_fit")
-
-        return ploty, left_fitx, right_fitx
+        self.xm_per_pix = 3.7 / (right_fitx[0] - left_fitx[0])
+        return ploty, left_fitx, right_fitx, left_fit, right_fit
 
     ym_per_pix = 30 / 720  # meters per pixel in y dimension
     xm_per_pix = 3.7 / 700  # meters per pixel in x dimension
@@ -146,7 +174,13 @@ class LineFit(object):
         return (car_position - middle_of_lane)
 
     def fit_line(self, img, plot):
-        leftx, lefty, rightx, righty, left_lane_inds, right_lane_inds = self.extract_lanes_pixels(img)
+        left_fit, right_fit = self.prev_fit
+        if left_fit is None or right_fit is None:
+            print("slide_window")
+            leftx, lefty, rightx, righty, left_lane_inds, right_lane_inds = self.slide_window_point_extract(img)
+        else:
+            print("pre")
+            leftx, lefty, rightx, righty, left_lane_inds, right_lane_inds = self.prev_fit_point_extract(img, left_fit, right_fit)
         if self.is_video:
             self.left_x_queue.enqueue(leftx)
             leftx = self.left_x_queue.sum()
@@ -156,9 +190,34 @@ class LineFit(object):
             rightx = self.right_x_queue.sum()
             self.right_y_queue.enqueue(righty)
             righty = self.right_y_queue.sum()
-        ploty, left_fitx, right_fitx = self.poly_fit(
+        ploty, left_fitx, right_fitx, left_fit, right_fit = self.poly_fit(
             leftx, lefty, rightx, righty, left_lane_inds, right_lane_inds,
             img,
             plot=plot
         )
+        if self.prev_fit[0] is not None:
+            # print(self.prev_fitx[0].shape, left_fit)
+            change_rate = np.mean([self.change_rate(self.prev_fit[0], left_fit), self.change_rate(self.prev_fit[1], right_fit)])
+            print(change_rate)
+            if change_rate > 3:
+                self.unmatch_count += 1
+                if self.unmatch_count > 5:
+                    self.prev_fit = None, None
+            else:
+                self.unmatch_count = 0
+                self.prev_fit = left_fit, right_fit
+                self.prev_fitx = left_fitx, right_fitx
+            # else:
+            #     left_fitx, right_fitx = self.prev_fitx
+        else:
+            self.unmatch_count = 0
+            self.prev_fit = left_fit, right_fit
+            self.prev_fitx = left_fitx, right_fitx
+
         return ploty, left_fitx, right_fitx
+
+    def change_rate(self, prev_fit, current_fit):
+        prev_fit = prev_fit[:10]
+        current_fit = current_fit[:10]
+        return np.mean(np.abs(prev_fit - current_fit))
+        # return np.abs(1 - (prev_fit / current_fit))
